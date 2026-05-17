@@ -12,22 +12,22 @@ export const metadata: Metadata = {
   title: 'Finance Tracker - Controle Financeiro Pessoal',
   description: 'Gerencie suas financas pessoais de forma simples e eficiente. Controle despesas, receitas, cartoes de credito, emprestimos e visualize relatorios.',
   generator: 'v0.app',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Finance Tracker',
+  },
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/icons/favicon-196.png', sizes: '196x196', type: 'image/png' },
+      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
+      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
     ],
-    apple: '/apple-icon.png',
+    apple: [
+      { url: '/icons/apple-icon-180.png', sizes: '180x180' }
+    ],
   },
 }
 
