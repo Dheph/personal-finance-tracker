@@ -26,6 +26,11 @@ import {
   DEFAULT_DATABASE 
 } from './finance-types'
 
+// Helper para remover valores undefined (Firestore não aceita undefined)
+function removeUndefined<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj))
+}
+
 let persistenceEnabled = false
 
 export async function enableOfflinePersistence() {
@@ -87,7 +92,7 @@ export async function saveTransaction(userId: string, transaction: Transaction):
   
   const col = getUserCollection(userId, 'transactions')
   const { id, ...data } = transaction
-  await setDoc(doc(col, id), data)
+  await setDoc(doc(col, id), removeUndefined(data))
 }
 
 export async function updateFirestoreTransaction(
@@ -98,7 +103,7 @@ export async function updateFirestoreTransaction(
   if (!isFirebaseConfigured()) return
   
   const col = getUserCollection(userId, 'transactions')
-  await updateDoc(doc(col, id), updates)
+  await updateDoc(doc(col, id), removeUndefined(updates))
 }
 
 export async function deleteFirestoreTransaction(userId: string, id: string): Promise<void> {
@@ -142,7 +147,7 @@ export async function saveCard(userId: string, card: Card): Promise<void> {
   
   const col = getUserCollection(userId, 'cards')
   const { id, ...data } = card
-  await setDoc(doc(col, id), data)
+  await setDoc(doc(col, id), removeUndefined(data))
 }
 
 export async function updateFirestoreCard(
@@ -153,7 +158,7 @@ export async function updateFirestoreCard(
   if (!isFirebaseConfigured()) return
   
   const col = getUserCollection(userId, 'cards')
-  await updateDoc(doc(col, id), updates)
+  await updateDoc(doc(col, id), removeUndefined(updates))
 }
 
 export async function deleteFirestoreCard(userId: string, id: string): Promise<void> {
@@ -199,7 +204,7 @@ export async function saveLoan(userId: string, loan: Loan): Promise<void> {
   
   const col = getUserCollection(userId, 'loans')
   const { id, ...data } = loan
-  await setDoc(doc(col, id), data)
+  await setDoc(doc(col, id), removeUndefined(data))
 }
 
 export async function updateFirestoreLoan(
@@ -210,7 +215,7 @@ export async function updateFirestoreLoan(
   if (!isFirebaseConfigured()) return
   
   const col = getUserCollection(userId, 'loans')
-  await updateDoc(doc(col, id), { ...updates, updatedAt: new Date().toISOString() })
+  await updateDoc(doc(col, id), removeUndefined({ ...updates, updatedAt: new Date().toISOString() }))
 }
 
 export async function deleteFirestoreLoan(userId: string, id: string): Promise<void> {
@@ -258,7 +263,7 @@ export async function saveLoanPayment(userId: string, payment: LoanPayment): Pro
   
   const col = getUserCollection(userId, 'loanPayments')
   const { id, ...data } = payment
-  await setDoc(doc(col, id), data)
+  await setDoc(doc(col, id), removeUndefined(data))
 }
 
 // Payoff Plans
@@ -295,7 +300,7 @@ export async function savePayoffPlan(userId: string, plan: PayoffPlan): Promise<
   
   const col = getUserCollection(userId, 'payoffPlans')
   const { id, ...data } = plan
-  await setDoc(doc(col, id), data)
+  await setDoc(doc(col, id), removeUndefined(data))
 }
 
 export async function updateFirestorePayoffPlan(
@@ -306,7 +311,7 @@ export async function updateFirestorePayoffPlan(
   if (!isFirebaseConfigured()) return
   
   const col = getUserCollection(userId, 'payoffPlans')
-  await updateDoc(doc(col, id), updates)
+  await updateDoc(doc(col, id), removeUndefined(updates))
 }
 
 export async function deleteFirestorePayoffPlan(userId: string, id: string): Promise<void> {
@@ -335,7 +340,7 @@ export async function saveSettings(userId: string, settings: Settings): Promise<
   if (!isFirebaseConfigured()) return
   
   const db = getFirebaseDb()
-  await setDoc(doc(db, 'users', userId, 'settings', 'preferences'), settings)
+  await setDoc(doc(db, 'users', userId, 'settings', 'preferences'), removeUndefined(settings))
 }
 
 // Batch operations for initial sync
@@ -355,26 +360,26 @@ export async function syncLocalToFirestore(
   for (const transaction of transactions) {
     const { id, ...data } = transaction
     const ref = doc(db, 'users', userId, 'transactions', id)
-    batch.set(ref, data)
+    batch.set(ref, removeUndefined(data))
   }
   
   // Sync cards
   for (const card of cards) {
     const { id, ...data } = card
     const ref = doc(db, 'users', userId, 'cards', id)
-    batch.set(ref, data)
+    batch.set(ref, removeUndefined(data))
   }
   
   // Sync loans
   for (const loan of loans) {
     const { id, ...data } = loan
     const ref = doc(db, 'users', userId, 'loans', id)
-    batch.set(ref, data)
+    batch.set(ref, removeUndefined(data))
   }
   
   // Sync settings
   const settingsRef = doc(db, 'users', userId, 'settings', 'preferences')
-  batch.set(settingsRef, settings)
+  batch.set(settingsRef, removeUndefined(settings))
   
   await batch.commit()
 }

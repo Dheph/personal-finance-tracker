@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/contexts/auth-context'
+import { ProtectedRoute } from '@/components/protected-route'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -48,7 +49,9 @@ export default function RootLayout({
     <html lang="pt-BR" className="dark bg-background">
       <body className="font-sans antialiased">
         <AuthProvider>
-          {children}
+          <ProtectedRoute>
+            {children}
+          </ProtectedRoute>
         </AuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

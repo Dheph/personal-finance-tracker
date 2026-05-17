@@ -14,9 +14,14 @@ import {
   Sun,
   Menu,
   X,
+  LogOut,
+  Landmark,
+  Target,
+  LineChart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useFinance } from '@/contexts/finance-context'
+import { useAuth } from '@/contexts/auth-context'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
 
@@ -24,12 +29,16 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Transações', href: '/transacoes', icon: ArrowLeftRight },
   { name: 'Cartões', href: '/cartoes', icon: CreditCard },
+  { name: 'Dívidas', href: '/dividas', icon: Landmark },
+  { name: 'Planejamento', href: '/planejamento', icon: Target },
+  { name: 'Analytics', href: '/analytics', icon: LineChart },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
   const { exportDatabase, importDatabase } = useFinance()
+  const { user, signOut, isConfigured } = useAuth()
   const [isDark, setIsDark] = useState(true)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -127,6 +136,18 @@ export function AppSidebar() {
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           {isDark ? 'Tema Claro' : 'Tema Escuro'}
         </Button>
+
+        {isConfigured && user && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+            onClick={signOut}
+          >
+            <LogOut className="h-4 w-4" />
+            Sair
+          </Button>
+        )}
       </div>
     </>
   )
@@ -218,6 +239,18 @@ export function AppSidebar() {
               {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               {isDark ? 'Tema Claro' : 'Tema Escuro'}
             </Button>
+
+            {isConfigured && user && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                onClick={signOut}
+              >
+                <LogOut className="h-4 w-4" />
+                Sair
+              </Button>
+            )}
           </div>
         </div>
       </aside>
