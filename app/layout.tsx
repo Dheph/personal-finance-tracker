@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { AuthProvider } from '@/contexts/auth-context'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -8,7 +9,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: 'Finance Tracker - Controle Financeiro Pessoal',
-  description: 'Gerencie suas finanças pessoais de forma simples e eficiente. Controle despesas, receitas, cartões de crédito e visualize relatórios.',
+  description: 'Gerencie suas financas pessoais de forma simples e eficiente. Controle despesas, receitas, cartoes de credito, emprestimos e visualize relatorios.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -46,7 +47,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="dark bg-background">
       <body className="font-sans antialiased">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
