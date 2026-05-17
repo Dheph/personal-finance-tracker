@@ -34,12 +34,7 @@ export interface Settings {
   theme: 'light' | 'dark' | 'system'
 }
 
-export interface FinanceDatabase {
-  transactions: Transaction[]
-  cards: Card[]
-  categories: string[]
-  settings: Settings
-}
+
 
 export type PaymentMethod =
   | 'credit_card'
@@ -106,6 +101,142 @@ export const CARD_BRANDS = [
   { id: 'hipercard', label: 'Hipercard', color: '#B3131B' },
 ] as const
 
+// Loan Types
+export type LoanType =
+  | 'personal_loan'
+  | 'financing'
+  | 'consignado'
+  | 'overdraft'
+  | 'credit_card_installment'
+  | 'informal_debt'
+  | 'bnpl'
+
+export type LoanStatus = 'active' | 'paid_off' | 'defaulted' | 'renegotiated'
+
+export interface Loan {
+  id: string
+  name: string
+  institution: string
+  type: LoanType
+  totalAmount: number
+  remainingAmount: number
+  interestRate: number
+  installments: number
+  paidInstallments: number
+  monthlyPayment: number
+  startDate: string
+  nextDueDate: string
+  status: LoanStatus
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LoanPayment {
+  id: string
+  loanId: string
+  amount: number
+  date: string
+  installmentNumber: number
+  status: 'paid' | 'partial' | 'late' | 'pending'
+  lateFee?: number
+  notes?: string
+}
+
+// Payoff Plan Types
+export type PayoffStrategy = 'snowball' | 'avalanche' | 'hybrid' | 'custom'
+
+export interface PayoffPlan {
+  id: string
+  name: string
+  strategy: PayoffStrategy
+  monthlyBudget: number
+  loans: string[] // loan IDs
+  customPriority?: string[] // for custom strategy
+  startDate: string
+  projectedEndDate: string
+  totalInterestSaved: number
+  isActive: boolean
+  createdAt: string
+}
+
+export interface PayoffSimulation {
+  strategy: PayoffStrategy
+  totalMonths: number
+  totalInterest: number
+  totalPaid: number
+  monthlyBreakdown: {
+    month: string
+    payments: { loanId: string; amount: number; remaining: number }[]
+  }[]
+}
+
+// Expense Comparison Types
+export interface ExpenseComparison {
+  category: string
+  currentMonth: number
+  previousMonth: number
+  average12Months: number
+  highestEver: number
+  lowestEver: number
+  percentageChange: number
+  trend: 'up' | 'down' | 'stable'
+}
+
+export interface FinancialInsight {
+  id: string
+  type: 'warning' | 'info' | 'success' | 'alert'
+  title: string
+  description: string
+  category?: string
+  value?: number
+  percentageChange?: number
+  createdAt: string
+}
+
+export const LOAN_TYPES = [
+  { id: 'personal_loan', label: 'Empréstimo Pessoal' },
+  { id: 'financing', label: 'Financiamento' },
+  { id: 'consignado', label: 'Consignado' },
+  { id: 'overdraft', label: 'Cheque Especial' },
+  { id: 'credit_card_installment', label: 'Cartão Parcelado' },
+  { id: 'informal_debt', label: 'Dívida Informal' },
+  { id: 'bnpl', label: 'BNPL (Compre Agora, Pague Depois)' },
+] as const
+
+export const PAYOFF_STRATEGIES = [
+  { 
+    id: 'snowball', 
+    label: 'Bola de Neve', 
+    description: 'Prioriza menores dívidas primeiro - gera motivação com vitórias rápidas' 
+  },
+  { 
+    id: 'avalanche', 
+    label: 'Avalanche', 
+    description: 'Prioriza maiores juros primeiro - economiza mais dinheiro no total' 
+  },
+  { 
+    id: 'hybrid', 
+    label: 'Híbrido', 
+    description: 'Começa com pequenas vitórias, depois foca em juros altos' 
+  },
+  { 
+    id: 'custom', 
+    label: 'Personalizado', 
+    description: 'Você define a ordem de prioridade das dívidas' 
+  },
+] as const
+
+export interface FinanceDatabase {
+  transactions: Transaction[]
+  cards: Card[]
+  loans: Loan[]
+  loanPayments: LoanPayment[]
+  payoffPlans: PayoffPlan[]
+  categories: string[]
+  settings: Settings
+}
+
 export const DEFAULT_DATABASE: FinanceDatabase = {
   transactions: [],
   cards: [
@@ -119,6 +250,9 @@ export const DEFAULT_DATABASE: FinanceDatabase = {
       color: '#8A05BE',
     },
   ],
+  loans: [],
+  loanPayments: [],
+  payoffPlans: [],
   categories: [
     'alimentação',
     'transporte',

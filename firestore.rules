@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Função auxiliar para verificar se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Função auxiliar para verificar se o usuário está acessando os próprios dados
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Regras para a subcoleção do usuário
+    match /users/{userId} {
+      // O usuário pode ler e gravar seu próprio documento principal
+      allow read, write: if isOwner(userId);
+
+      // Regras para subcoleções (transações, cartões, dívidas, etc.)
+      match /{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
