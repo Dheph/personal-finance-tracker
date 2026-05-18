@@ -25,7 +25,9 @@ import {
   Settings,
   DEFAULT_DATABASE,
   Asset,
-  Liability
+  Liability,
+  SinkingFund,
+  AnnualExpense
 } from './finance-types'
 
 // Helper para remover valores undefined (Firestore não aceita undefined)
@@ -351,7 +353,11 @@ export async function syncLocalToFirestore(
   transactions: Transaction[],
   cards: Card[],
   loans: Loan[],
-  settings: Settings
+  settings: Settings,
+  assets: Asset[],
+  liabilities: Liability[],
+  sinkingFunds: SinkingFund[],
+  annualExpenses: AnnualExpense[]
 ): Promise<void> {
   if (!isFirebaseConfigured()) return
   
@@ -394,6 +400,20 @@ export async function syncLocalToFirestore(
   for (const liability of liabilities) {
     const { id, ...data } = liability
     const ref = doc(db, 'users', userId, 'liabilities', id)
+    batch.set(ref, removeUndefined(data))
+  }
+
+  // Sync sinking funds
+  for (const fund of sinkingFunds) {
+    const { id, ...data } = fund
+    const ref = doc(db, 'users', userId, 'sinkingFunds', id)
+    batch.set(ref, removeUndefined(data))
+  }
+
+  // Sync annual expenses
+  for (const expense of annualExpenses) {
+    const { id, ...data } = expense
+    const ref = doc(db, 'users', userId, 'annualExpenses', id)
     batch.set(ref, removeUndefined(data))
   }
 
@@ -457,6 +477,66 @@ export async function saveLiability(userId: string, liability: Liability): Promi
 export async function deleteFirestoreLiability(userId: string, id: string): Promise<void> {
   if (!isFirebaseConfigured()) return
   const col = getUserCollection(userId, 'liabilities')
+  await deleteDoc(doc(col, id))
+}
+
+// Sinking Funds Firestore Bindings
+export function subscribeToSinkingFunds(
+  userId: string,
+  callback: (funds: SinkingFund[]) => void
+): Unsubscribe {
+  if (!isFirebaseConfigured()) {
+    callback([])
+    return () => {}
+  }
+  
+  const col = getUserCollection(userId, 'sinkingFunds')
+  return onSnapshot(col, (snapshot) => {
+    const funds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SinkingFund))
+    callback(funds)
+  })
+}
+
+export async function saveSinkingFund(userId: string, fund: SinkingFund): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  const col = getUserCollection(userId, 'sinkingFunds')
+  const { id, ...data } = fund
+  await setDoc(doc(col, id), removeUndefined(data))
+}
+
+export async function deleteFirestoreSinkingFund(userId: string, id: string): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  const col = getUserCollection(userId, 'sinkingFunds')
+  await deleteDoc(doc(col, id))
+}
+
+// Annual Expenses Firestore Bindings
+export function subscribeToAnnualExpenses(
+  userId: string,
+  callback: (expenses: AnnualExpense[]) => void
+): Unsubscribe {
+  if (!isFirebaseConfigured()) {
+    callback([])
+    return () => {}
+  }
+  
+  const col = getUserCollection(userId, 'annualExpenses')
+  return onSnapshot(col, (snapshot) => {
+    const expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AnnualExpense))
+    callback(expenses)
+  })
+}
+
+export async function saveAnnualExpense(userId: string, expense: AnnualExpense): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  const col = getUserCollection(userId, 'annualExpenses')
+  const { id, ...data } = expense
+  await setDoc(doc(col, id), removeUndefined(data))
+}
+
+export async function deleteFirestoreAnnualExpense(userId: string, id: string): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  const col = getUserCollection(userId, 'annualExpenses')
   await deleteDoc(doc(col, id))
 }
 

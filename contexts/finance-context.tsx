@@ -10,7 +10,9 @@ import {
   PayoffPlan,
   DEFAULT_DATABASE,
   Asset,
-  Liability
+  Liability,
+  SinkingFund,
+  AnnualExpense
 } from '@/lib/finance-types'
 import {
   loadDatabase,
@@ -45,6 +47,12 @@ import {
   subscribeToLiabilities,
   saveLiability,
   deleteFirestoreLiability,
+  subscribeToSinkingFunds,
+  saveSinkingFund,
+  deleteFirestoreSinkingFund,
+  subscribeToAnnualExpenses,
+  saveAnnualExpense,
+  deleteFirestoreAnnualExpense,
 } from '@/lib/firestore'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { useAuth } from './auth-context'
@@ -86,6 +94,14 @@ interface FinanceContextType {
   addLiability: (liability: Omit<Liability, 'id' | 'updatedAt'>) => Promise<void>
   updateLiability: (id: string, updates: Partial<Liability>) => Promise<void>
   deleteLiability: (id: string) => Promise<void>
+  // Sinking Funds
+  addSinkingFund: (fund: Omit<SinkingFund, 'id' | 'createdAt'>) => Promise<void>
+  updateSinkingFund: (id: string, updates: Partial<SinkingFund>) => Promise<void>
+  deleteSinkingFund: (id: string) => Promise<void>
+  // Annual Expenses
+  addAnnualExpense: (expense: Omit<AnnualExpense, 'id'>) => Promise<void>
+  updateAnnualExpense: (id: string, updates: Partial<AnnualExpense>) => Promise<void>
+  deleteAnnualExpense: (id: string) => Promise<void>
   // Utilities
   exportDatabase: () => void
   importDatabase: (file: File) => Promise<void>
@@ -210,6 +226,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       subscribeToLiabilities(user.uid, (liabilities) => {
         setDb(prev => {
           const updated = { ...prev, liabilities }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to sinking funds
+    unsubscribers.push(
+      subscribeToSinkingFunds(user.uid, (sinkingFunds) => {
+        setDb(prev => {
+          const updated = { ...prev, sinkingFunds }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to annual expenses
+    unsubscribers.push(
+      subscribeToAnnualExpenses(user.uid, (annualExpenses) => {
+        setDb(prev => {
+          const updated = { ...prev, annualExpenses }
           saveToStorage(updated)
           return updated
         })
@@ -647,6 +685,125 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isCloudEnabled, user])
 
+  // Sinking Funds
+  const addSinkingFund = useCallback(async (fund: Omit<SinkingFund, 'id' | 'createdAt'>) => {
+    const newFund: SinkingFund = {
+      ...fund,
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: [...(prev.sinkingFunds || []), newFund],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveSinkingFund(user.uid, newFund)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateSinkingFund = useCallback(async (id: string, updates: Partial<SinkingFund>) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: (prev.sinkingFunds || []).map(f => 
+          f.id === id ? { ...f, ...updates } : f
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.sinkingFunds.find(f => f.id === id)
+        if (found) {
+          saveSinkingFund(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteSinkingFund = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: (prev.sinkingFunds || []).filter(f => f.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreSinkingFund(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
+  // Annual Expenses
+  const addAnnualExpense = useCallback(async (expense: Omit<AnnualExpense, 'id'>) => {
+    const newExpense: AnnualExpense = {
+      ...expense,
+      id: uuidv4(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: [...(prev.annualExpenses || []), newExpense],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveAnnualExpense(user.uid, newExpense)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateAnnualExpense = useCallback(async (id: string, updates: Partial<AnnualExpense>) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: (prev.annualExpenses || []).map(e => 
+          e.id === id ? { ...e, ...updates } : e
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.annualExpenses.find(e => e.id === id)
+        if (found) {
+          saveAnnualExpense(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteAnnualExpense = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: (prev.annualExpenses || []).filter(e => e.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreAnnualExpense(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
   // Utilities
   const exportDatabase = () => {
     exportToFile(db)
@@ -669,7 +826,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         db.loans,
         db.settings,
         db.assets || [],
-        db.liabilities || []
+        db.liabilities || [],
+        db.sinkingFunds || [],
+        db.annualExpenses || []
       )
     } finally {
       setIsSyncing(false)
@@ -709,6 +868,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         addLiability,
         updateLiability,
         deleteLiability,
+        addSinkingFund,
+        updateSinkingFund,
+        deleteSinkingFund,
+        addAnnualExpense,
+        updateAnnualExpense,
+        deleteAnnualExpense,
         exportDatabase,
         importDatabase,
         syncToCloud,
