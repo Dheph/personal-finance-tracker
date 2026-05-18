@@ -8,7 +8,11 @@ import {
   Loan,
   LoanPayment,
   PayoffPlan,
-  DEFAULT_DATABASE 
+  DEFAULT_DATABASE,
+  Asset,
+  Liability,
+  SinkingFund,
+  AnnualExpense
 } from '@/lib/finance-types'
 import {
   loadDatabase,
@@ -37,16 +41,30 @@ import {
   deleteFirestorePayoffPlan,
   enableOfflinePersistence,
   syncLocalToFirestore,
+  subscribeToAssets,
+  saveAsset,
+  deleteFirestoreAsset,
+  subscribeToLiabilities,
+  saveLiability,
+  deleteFirestoreLiability,
+  subscribeToSinkingFunds,
+  saveSinkingFund,
+  deleteFirestoreSinkingFund,
+  subscribeToAnnualExpenses,
+  saveAnnualExpense,
+  deleteFirestoreAnnualExpense,
 } from '@/lib/firestore'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { useAuth } from './auth-context'
 import { v4 as uuidv4 } from 'uuid'
+import { runFinancialIntelligenceEngine, FinancialIntelligenceResult } from '@/lib/engine/core'
 
 interface FinanceContextType {
   db: FinanceDatabase
   isLoading: boolean
   isSyncing: boolean
   isCloudEnabled: boolean
+  engineResult: FinancialIntelligenceResult | null
   // Transactions
   addTransaction: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>
   addInstallmentTransactions: (
@@ -68,6 +86,22 @@ interface FinanceContextType {
   addPayoffPlan: (plan: Omit<PayoffPlan, 'id' | 'createdAt'>) => Promise<void>
   updatePayoffPlan: (id: string, updates: Partial<PayoffPlan>) => Promise<void>
   deletePayoffPlan: (id: string) => Promise<void>
+  // Assets
+  addAsset: (asset: Omit<Asset, 'id' | 'updatedAt'>) => Promise<void>
+  updateAsset: (id: string, updates: Partial<Asset>) => Promise<void>
+  deleteAsset: (id: string) => Promise<void>
+  // Liabilities
+  addLiability: (liability: Omit<Liability, 'id' | 'updatedAt'>) => Promise<void>
+  updateLiability: (id: string, updates: Partial<Liability>) => Promise<void>
+  deleteLiability: (id: string) => Promise<void>
+  // Sinking Funds
+  addSinkingFund: (fund: Omit<SinkingFund, 'id' | 'createdAt'>) => Promise<void>
+  updateSinkingFund: (id: string, updates: Partial<SinkingFund>) => Promise<void>
+  deleteSinkingFund: (id: string) => Promise<void>
+  // Annual Expenses
+  addAnnualExpense: (expense: Omit<AnnualExpense, 'id'>) => Promise<void>
+  updateAnnualExpense: (id: string, updates: Partial<AnnualExpense>) => Promise<void>
+  deleteAnnualExpense: (id: string) => Promise<void>
   // Utilities
   exportDatabase: () => void
   importDatabase: (file: File) => Promise<void>
@@ -82,7 +116,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<FinanceDatabase>(DEFAULT_DATABASE)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [engineResult, setEngineResult] = useState<FinancialIntelligenceResult | null>(null)
   const isCloudEnabled = isFirebaseConfigured() && !!user
+
+  // Reactive Engine Calculation
+  useEffect(() => {
+    try {
+      const result = runFinancialIntelligenceEngine(db, {
+        assets: db.assets || [],
+        liabilities: db.liabilities || [],
+        sinkingFunds: db.sinkingFunds || [],
+        annualExpenses: db.annualExpenses || [],
+        customBudgets: db.customBudgets || [],
+      })
+      setEngineResult(result)
+    } catch (e) {
+      console.error('Erro ao executar Financial Intelligence Engine:', e)
+    }
+  }, [db])
 
   // Initial load from localStorage
   useEffect(() => {
@@ -159,6 +210,50 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       })
     )
 
+    // Subscribe to assets
+    unsubscribers.push(
+      subscribeToAssets(user.uid, (assets) => {
+        setDb(prev => {
+          const updated = { ...prev, assets }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to liabilities
+    unsubscribers.push(
+      subscribeToLiabilities(user.uid, (liabilities) => {
+        setDb(prev => {
+          const updated = { ...prev, liabilities }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to sinking funds
+    unsubscribers.push(
+      subscribeToSinkingFunds(user.uid, (sinkingFunds) => {
+        setDb(prev => {
+          const updated = { ...prev, sinkingFunds }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to annual expenses
+    unsubscribers.push(
+      subscribeToAnnualExpenses(user.uid, (annualExpenses) => {
+        setDb(prev => {
+          const updated = { ...prev, annualExpenses }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
     return () => {
       unsubscribers.forEach(unsub => unsub())
     }
@@ -166,17 +261,63 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   // Transactions
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: uuidv4(),
-      createdAt: new Date().toISOString(),
+    const transactionsToCreate: Transaction[] = []
+
+    if (transaction.isRecurring) {
+      const startYear = parseInt(transaction.date.substring(0, 4))
+      const startMonth = parseInt(transaction.date.substring(5, 7)) - 1
+      const startDay = parseInt(transaction.date.substring(8, 10))
+
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth()
+
+      let loopYear = startYear
+      let loopMonth = startMonth
+
+      while (loopYear < currentYear || (loopYear === currentYear && loopMonth <= currentMonth)) {
+        const daysInMonth = new Date(loopYear, loopMonth + 1, 0).getDate()
+        const targetDay = Math.min(startDay, daysInMonth)
+        const formattedMonthStr = String(loopMonth + 1).padStart(2, '0')
+        const formattedDayStr = String(targetDay).padStart(2, '0')
+        const dateStr = `${loopYear}-${formattedMonthStr}-${formattedDayStr}`
+        const competencyMonth = `${loopYear}-${formattedMonthStr}`
+
+        transactionsToCreate.push({
+          ...transaction,
+          id: uuidv4(),
+          date: dateStr,
+          competencyMonth,
+          createdAt: new Date().toISOString(),
+        })
+
+        loopMonth++
+        if (loopMonth > 11) {
+          loopMonth = 0
+          loopYear++
+        }
+      }
+
+      if (transactionsToCreate.length === 0) {
+        transactionsToCreate.push({
+          ...transaction,
+          id: uuidv4(),
+          createdAt: new Date().toISOString(),
+        })
+      }
+    } else {
+      transactionsToCreate.push({
+        ...transaction,
+        id: uuidv4(),
+        createdAt: new Date().toISOString(),
+      })
     }
 
     // Update local state immediately
     setDb(prev => {
       const updated = {
         ...prev,
-        transactions: [newTransaction, ...prev.transactions],
+        transactions: [...transactionsToCreate, ...prev.transactions],
       }
       saveToStorage(updated)
       return updated
@@ -184,7 +325,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // Sync to cloud if enabled
     if (isCloudEnabled && user) {
-      await saveTransaction(user.uid, newTransaction)
+      for (const t of transactionsToCreate) {
+        await saveTransaction(user.uid, t)
+      }
     }
   }, [isCloudEnabled, user])
 
@@ -460,6 +603,255 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isCloudEnabled, user])
 
+  // Assets
+  const addAsset = useCallback(async (asset: Omit<Asset, 'id' | 'updatedAt'>) => {
+    const newAsset: Asset = {
+      ...asset,
+      id: uuidv4(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: [...(prev.assets || []), newAsset],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveAsset(user.uid, newAsset)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateAsset = useCallback(async (id: string, updates: Partial<Asset>) => {
+    const updatedAsset = {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: (prev.assets || []).map(a => 
+          a.id === id ? { ...a, ...updatedAsset } : a
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.assets.find(a => a.id === id)
+        if (found) {
+          saveAsset(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteAsset = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: (prev.assets || []).filter(a => a.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreAsset(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
+  // Liabilities
+  const addLiability = useCallback(async (liability: Omit<Liability, 'id' | 'updatedAt'>) => {
+    const newLiability: Liability = {
+      ...liability,
+      id: uuidv4(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: [...(prev.liabilities || []), newLiability],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveLiability(user.uid, newLiability)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateLiability = useCallback(async (id: string, updates: Partial<Liability>) => {
+    const updatedLiability = {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: (prev.liabilities || []).map(l => 
+          l.id === id ? { ...l, ...updatedLiability } : l
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.liabilities.find(l => l.id === id)
+        if (found) {
+          saveLiability(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteLiability = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: (prev.liabilities || []).filter(l => l.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreLiability(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
+  // Sinking Funds
+  const addSinkingFund = useCallback(async (fund: Omit<SinkingFund, 'id' | 'createdAt'>) => {
+    const newFund: SinkingFund = {
+      ...fund,
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: [...(prev.sinkingFunds || []), newFund],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveSinkingFund(user.uid, newFund)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateSinkingFund = useCallback(async (id: string, updates: Partial<SinkingFund>) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: (prev.sinkingFunds || []).map(f => 
+          f.id === id ? { ...f, ...updates } : f
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.sinkingFunds.find(f => f.id === id)
+        if (found) {
+          saveSinkingFund(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteSinkingFund = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        sinkingFunds: (prev.sinkingFunds || []).filter(f => f.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreSinkingFund(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
+  // Annual Expenses
+  const addAnnualExpense = useCallback(async (expense: Omit<AnnualExpense, 'id'>) => {
+    const newExpense: AnnualExpense = {
+      ...expense,
+      id: uuidv4(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: [...(prev.annualExpenses || []), newExpense],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveAnnualExpense(user.uid, newExpense)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateAnnualExpense = useCallback(async (id: string, updates: Partial<AnnualExpense>) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: (prev.annualExpenses || []).map(e => 
+          e.id === id ? { ...e, ...updates } : e
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.annualExpenses.find(e => e.id === id)
+        if (found) {
+          saveAnnualExpense(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteAnnualExpense = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        annualExpenses: (prev.annualExpenses || []).filter(e => e.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreAnnualExpense(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
   // Utilities
   const exportDatabase = () => {
     exportToFile(db)
@@ -480,7 +872,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         db.transactions,
         db.cards,
         db.loans,
-        db.settings
+        db.settings,
+        db.assets || [],
+        db.liabilities || [],
+        db.sinkingFunds || [],
+        db.annualExpenses || []
       )
     } finally {
       setIsSyncing(false)
@@ -499,6 +895,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         isLoading,
         isSyncing,
         isCloudEnabled,
+        engineResult,
         addTransaction,
         addInstallmentTransactions,
         updateTransaction,
@@ -513,6 +910,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         addPayoffPlan,
         updatePayoffPlan,
         deletePayoffPlan,
+        addAsset,
+        updateAsset,
+        deleteAsset,
+        addLiability,
+        updateLiability,
+        deleteLiability,
+        addSinkingFund,
+        updateSinkingFund,
+        deleteSinkingFund,
+        addAnnualExpense,
+        updateAnnualExpense,
+        deleteAnnualExpense,
         exportDatabase,
         importDatabase,
         syncToCloud,

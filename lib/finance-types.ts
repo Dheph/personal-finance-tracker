@@ -227,6 +227,51 @@ export const PAYOFF_STRATEGIES = [
   },
 ] as const
 
+// Engine Extensions
+export type AssetType = 'cash' | 'investment' | 'vehicle' | 'property' | 'crypto'
+export type LiabilityType = 'loan' | 'credit_card' | 'financing'
+
+export interface Asset {
+  id: string
+  name: string
+  type: AssetType
+  currentValue: number
+  updatedAt: string
+}
+
+export interface Liability {
+  id: string
+  name: string
+  type: LiabilityType
+  remainingAmount: number
+  updatedAt: string
+}
+
+export interface SinkingFund {
+  id: string
+  goalName: string
+  targetAmount: number
+  currentAmount: number
+  targetDate: string
+  createdAt: string
+}
+
+export interface AnnualExpense {
+  id: string
+  name: string
+  annualAmount: number
+  dueMonth: number // 1-12
+  category: string
+}
+
+export interface Budget {
+  category: string
+  mode: 'fixed' | 'dynamic'
+  targetAmount: number
+  adaptive: boolean
+  warningThreshold: number
+}
+
 export interface FinanceDatabase {
   transactions: Transaction[]
   cards: Card[]
@@ -235,6 +280,12 @@ export interface FinanceDatabase {
   payoffPlans: PayoffPlan[]
   categories: string[]
   settings: Settings
+  // V3 Engine fields
+  assets: Asset[]
+  liabilities: Liability[]
+  sinkingFunds: SinkingFund[]
+  annualExpenses: AnnualExpense[]
+  customBudgets: Budget[]
 }
 
 export const DEFAULT_DATABASE: FinanceDatabase = {
@@ -267,4 +318,9 @@ export const DEFAULT_DATABASE: FinanceDatabase = {
     currency: 'BRL',
     theme: 'dark',
   },
+  assets: [],
+  liabilities: [],
+  sinkingFunds: [],
+  annualExpenses: [],
+  customBudgets: [],
 }
