@@ -1,7 +1,9 @@
 import { FinanceDatabase } from '../finance-types';
-import { EngineDatabase, NetWorthSnapshot, Subscription, BehaviorInsight } from './types';
+import { EngineDatabase, NetWorthSnapshot, Subscription, BehaviorInsight, DynamicExpense } from './types';
 import { calculateNetWorth, generateNetWorthHistory } from './networth';
 import { detectSubscriptions } from './subscriptions';
+import { detectDynamicExpenses } from './analytics';
+import { analyzeExpenseBehavior } from './behavior';
 
 export interface FinancialIntelligenceResult {
   netWorth: {
@@ -16,6 +18,13 @@ export interface FinancialIntelligenceResult {
   };
   subscriptions: {
     items: Subscription[];
+    insights: BehaviorInsight[];
+  };
+  dynamicExpenses: {
+    items: DynamicExpense[];
+    insights: BehaviorInsight[];
+  };
+  behavior: {
     insights: BehaviorInsight[];
   };
   globalInsights: BehaviorInsight[];
@@ -47,9 +56,17 @@ export function runFinancialIntelligenceEngine(
   // 2. Subscription Manager
   const subDetection = detectSubscriptions(financeDb.transactions);
 
-  // Combine insights
+  // 3. Dynamic Expenses
+  const dynamicDetection = detectDynamicExpenses(financeDb.transactions);
+
+  // 4. Behavior Analysis
+  const behaviorInsights = analyzeExpenseBehavior(financeDb.transactions, financeDb.cards);
+
+  // Combine all insights into a prioritized list
   const globalInsights: BehaviorInsight[] = [
     ...subDetection.insights,
+    ...dynamicDetection.insights,
+    ...behaviorInsights,
   ];
 
   return {
@@ -63,6 +80,13 @@ export function runFinancialIntelligenceEngine(
     subscriptions: {
       items: subDetection.subscriptions,
       insights: subDetection.insights,
+    },
+    dynamicExpenses: {
+      items: dynamicDetection.dynamicExpenses,
+      insights: dynamicDetection.insights,
+    },
+    behavior: {
+      insights: behaviorInsights,
     },
     globalInsights,
   };

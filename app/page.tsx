@@ -9,6 +9,8 @@ import { LoanSummary } from '@/components/loan-list'
 import { AnalyticsMetrics } from '@/components/financial-insights'
 import { NetWorthCard } from '@/components/net-worth-card'
 import { SubscriptionCard } from '@/components/subscription-card'
+import { DynamicExpensesCard } from '@/components/dynamic-expenses-card'
+import { BehaviorAnalysisCard } from '@/components/behavior-analysis-card'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -40,10 +42,21 @@ function DashboardContent() {
               <h2 className="text-lg font-semibold text-foreground mb-4">Resumo de Dívidas</h2>
               <LoanSummary />
             </div>
-            
+
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Insights Financeiros</h2>
+                <AnalyticsMetrics />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground mb-4">Padrões de Hábito</h2>
+                <BehaviorAnalysisCard />
+              </div>
+            </div>
+
             <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">Insights Financeiros</h2>
-              <AnalyticsMetrics />
+              <h2 className="text-lg font-semibold text-foreground mb-4">Contas Variáveis & Consumo</h2>
+              <DynamicExpensesCard />
             </div>
 
             <div>
