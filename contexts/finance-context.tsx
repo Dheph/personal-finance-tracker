@@ -12,7 +12,9 @@ import {
   Asset,
   Liability,
   SinkingFund,
-  AnnualExpense
+  AnnualExpense,
+  Financing,
+  FinancingInstallment
 } from '@/lib/finance-types'
 import {
   loadDatabase,
@@ -53,11 +55,21 @@ import {
   subscribeToAnnualExpenses,
   saveAnnualExpense,
   deleteFirestoreAnnualExpense,
+  subscribeToFinancings,
+  saveFinancing,
+  updateFirestoreFinancing,
+  deleteFirestoreFinancing,
+  subscribeToFinancingInstallments,
+  saveFinancingInstallment,
+  updateFirestoreFinancingInstallment,
+  deleteFirestoreFinancingInstallment,
 } from '@/lib/firestore'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { useAuth } from './auth-context'
 import { v4 as uuidv4 } from 'uuid'
 import { runFinancialIntelligenceEngine, FinancialIntelligenceResult } from '@/lib/engine/core'
+import { EconomicIndexers, fetchEconomicRates, DEFAULT_RATES } from '@/lib/engine/economic-rates'
+import { generateProjectedInstallments, calculateNextInstallmentPrediction } from '@/lib/engine/financing-calculations'
 
 interface FinanceContextType {
   db: FinanceDatabase
@@ -71,7 +83,7 @@ interface FinanceContextType {
     baseTransaction: Omit<Transaction, 'id' | 'createdAt' | 'installments'>,
     totalInstallments: number
   ) => Promise<void>
-  updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>
+  updateTransaction: (id: string, updates: Partial<Transaction>, updateSubsequent?: boolean) => Promise<void>
   deleteTransaction: (id: string) => Promise<void>
   // Cards
   addCard: (card: Omit<Card, 'id'>) => Promise<void>
@@ -102,6 +114,16 @@ interface FinanceContextType {
   addAnnualExpense: (expense: Omit<AnnualExpense, 'id'>) => Promise<void>
   updateAnnualExpense: (id: string, updates: Partial<AnnualExpense>) => Promise<void>
   deleteAnnualExpense: (id: string) => Promise<void>
+  // Economic rates & Variable Financing
+  economicRates: EconomicIndexers
+  addFinancing: (financing: Omit<Financing, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  updateFinancing: (id: string, updates: Partial<Financing>) => Promise<void>
+  deleteFinancing: (id: string) => Promise<void>
+  recordFinancingInstallmentPayment: (
+    installmentId: string, 
+    actualValue: number, 
+    notes?: string
+  ) => Promise<void>
   // Utilities
   exportDatabase: () => void
   importDatabase: (file: File) => Promise<void>
@@ -118,6 +140,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false)
   const [engineResult, setEngineResult] = useState<FinancialIntelligenceResult | null>(null)
   const isCloudEnabled = isFirebaseConfigured() && !!user
+  const [economicRates, setEconomicRates] = useState<EconomicIndexers>(DEFAULT_RATES)
+
+  // Fetch indexer rates
+  useEffect(() => {
+    fetchEconomicRates().then(setEconomicRates)
+  }, [])
 
   // Reactive Engine Calculation
   useEffect(() => {
@@ -254,6 +282,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       })
     )
 
+    // Subscribe to financings
+    unsubscribers.push(
+      subscribeToFinancings(user.uid, (financings) => {
+        setDb(prev => {
+          const updated = { ...prev, financings }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to financing installments
+    unsubscribers.push(
+      subscribeToFinancingInstallments(user.uid, (financingInstallments) => {
+        setDb(prev => {
+          const updated = { ...prev, financingInstallments }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
     return () => {
       unsubscribers.forEach(unsub => unsub())
     }
@@ -378,20 +428,86 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isCloudEnabled, user])
 
-  const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>) => {
+  const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>, updateSubsequent: boolean = false) => {
+    let affectedIds: string[] = [id]
+    let subsequentUpdatesMap: { [key: string]: Partial<Transaction> } = {}
+
     setDb(prev => {
+      const originalTx = prev.transactions.find(t => t.id === id)
+      if (!originalTx) return prev
+
+      let updatedTransactions = prev.transactions.map(t => {
+        if (t.id === id) {
+          return { ...t, ...updates }
+        }
+        return t
+      })
+
+      if (updateSubsequent && originalTx.isRecurring) {
+        const originalDesc = originalTx.description.toLowerCase().trim()
+        const originalType = originalTx.type
+        const originalDateStr = originalTx.date
+
+        let dayChanged = false
+        let targetDay = 0
+        if (updates.date && updates.date !== originalDateStr) {
+          const origDate = new Date(originalDateStr)
+          const newDate = new Date(updates.date)
+          dayChanged = origDate.getDate() !== newDate.getDate()
+          targetDay = newDate.getDate()
+        }
+
+        updatedTransactions = updatedTransactions.map(t => {
+          if (t.id === id) return t // already updated
+
+          const isSubsequent = t.isRecurring &&
+                              t.type === originalType &&
+                              t.description.toLowerCase().trim() === originalDesc &&
+                              t.date >= originalDateStr
+
+          if (isSubsequent) {
+            affectedIds.push(t.id)
+            let newDateStr = t.date
+            if (dayChanged && updates.date) {
+              const parts = t.date.split('-')
+              const year = parseInt(parts[0])
+              const month = parseInt(parts[1]) - 1
+              const daysInMonth = new Date(year, month + 1, 0).getDate()
+              const finalDay = Math.min(targetDay, daysInMonth)
+              const formattedMonth = String(month + 1).padStart(2, '0')
+              const formattedDay = String(finalDay).padStart(2, '0')
+              newDateStr = `${year}-${formattedMonth}-${formattedDay}`
+            }
+
+            const subsequentUpdates = { ...updates }
+            if (updates.date) {
+              subsequentUpdates.date = newDateStr
+              subsequentUpdates.competencyMonth = newDateStr.slice(0, 7)
+            }
+
+            subsequentUpdatesMap[t.id] = subsequentUpdates
+            return { ...t, ...subsequentUpdates }
+          }
+
+          return t
+        })
+      }
+
       const updated = {
         ...prev,
-        transactions: prev.transactions.map(t => 
-          t.id === id ? { ...t, ...updates } : t
-        ),
+        transactions: updatedTransactions,
       }
       saveToStorage(updated)
       return updated
     })
 
     if (isCloudEnabled && user) {
-      await updateFirestoreTransaction(user.uid, id, updates)
+      for (const affectedId of affectedIds) {
+        const txUpdates = affectedId === id ? updates : subsequentUpdatesMap[affectedId]
+        if (txUpdates) {
+          await updateFirestoreTransaction(user.uid, affectedId, txUpdates)
+        }
+      }
     }
   }, [isCloudEnabled, user])
 
@@ -876,7 +992,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         db.assets || [],
         db.liabilities || [],
         db.sinkingFunds || [],
-        db.annualExpenses || []
+        db.annualExpenses || [],
+        db.financings || [],
+        db.financingInstallments || []
       )
     } finally {
       setIsSyncing(false)
@@ -887,6 +1005,235 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     const data = loadDatabase()
     setDb(data)
   }
+
+  // Variable Financing Methods
+  const addFinancing = useCallback(async (financingData: Omit<Financing, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const financingId = uuidv4()
+    const nowStr = new Date().toISOString()
+
+    const newFinancingBase: Financing = {
+      ...financingData,
+      id: financingId,
+      createdAt: nowStr,
+      updatedAt: nowStr
+    }
+
+    // Gerar parcelas projetadas
+    const projected = generateProjectedInstallments(newFinancingBase, economicRates)
+    const installments: FinancingInstallment[] = projected.map((inst) => ({
+      ...inst,
+      id: uuidv4(),
+      createdAt: nowStr
+    }))
+
+    // Calcular primeira previsão e tendência da próxima parcela
+    const { predictedValue } = calculateNextInstallmentPrediction(newFinancingBase, installments, economicRates)
+    
+    const finalFinancing: Financing = {
+      ...newFinancingBase,
+      nextInstallmentPrediction: predictedValue,
+      lastInstallmentValue: installments.find(i => i.paid)?.actualValue
+    }
+
+    // Atualizar base de dados
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        financings: [...(prev.financings || []), finalFinancing],
+        financingInstallments: [...(prev.financingInstallments || []), ...installments]
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    // Sincronizar com Firestore se logado
+    if (isCloudEnabled && user) {
+      await saveFinancing(user.uid, finalFinancing)
+      for (const inst of installments) {
+        await saveFinancingInstallment(user.uid, inst)
+      }
+    }
+  }, [isCloudEnabled, user, economicRates])
+
+  const updateFinancing = useCallback(async (id: string, updates: Partial<Financing>) => {
+    const nowStr = new Date().toISOString()
+
+    setDb(prev => {
+      const current = (prev.financings || []).find(f => f.id === id)
+      if (!current) return prev
+
+      const updatedFinancingBase: Financing = {
+        ...current,
+        ...updates,
+        updatedAt: nowStr
+      }
+
+      // Se alterou parâmetros cruciais de cálculo, recalculamos parcelas futuras
+      let updatedInstallments = [...(prev.financingInstallments || [])]
+      const needsRecalculation = 
+        updates.principalAmount !== undefined ||
+        updates.annualInterestRate !== undefined ||
+        updates.totalInstallments !== undefined ||
+        updates.indexer !== undefined ||
+        updates.calculationModel !== undefined ||
+        updates.paidInstallments !== undefined
+
+      if (needsRecalculation) {
+        // Filtramos as parcelas desse financiamento
+        const nonThisFinancing = updatedInstallments.filter(i => i.financingId !== id)
+        
+        // Geramos novas
+        const projected = generateProjectedInstallments(updatedFinancingBase, economicRates)
+        const newInsts: FinancingInstallment[] = projected.map(inst => ({
+          ...inst,
+          id: uuidv4(),
+          createdAt: nowStr
+        }))
+        
+        updatedInstallments = [...nonThisFinancing, ...newInsts]
+      }
+
+      // Calcular previsão e tendência atualizadas
+      const financingInsts = updatedInstallments.filter(i => i.financingId === id)
+      const { predictedValue } = calculateNextInstallmentPrediction(updatedFinancingBase, financingInsts, economicRates)
+      
+      const finalFinancing: Financing = {
+        ...updatedFinancingBase,
+        nextInstallmentPrediction: predictedValue,
+        lastInstallmentValue: financingInsts.find(i => i.paid)?.actualValue
+      }
+
+      const updatedDb = {
+        ...prev,
+        financings: (prev.financings || []).map(f => f.id === id ? finalFinancing : f),
+        financingInstallments: updatedInstallments
+      }
+      saveToStorage(updatedDb)
+
+      // Atualizar no Firestore
+      if (isCloudEnabled && user) {
+        saveFinancing(user.uid, finalFinancing)
+        if (needsRecalculation) {
+          const oldThisFinancing = (prev.financingInstallments || []).filter(i => i.financingId === id)
+          for (const oldInst of oldThisFinancing) {
+            deleteFirestoreFinancingInstallment(user.uid, oldInst.id)
+          }
+          const newThisFinancing = updatedInstallments.filter(i => i.financingId === id)
+          for (const newInst of newThisFinancing) {
+            saveFinancingInstallment(user.uid, newInst)
+          }
+        }
+      }
+
+      return updatedDb
+    })
+  }, [isCloudEnabled, user, economicRates])
+
+  const deleteFinancing = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updatedDb = {
+        ...prev,
+        financings: (prev.financings || []).filter(f => f.id !== id),
+        financingInstallments: (prev.financingInstallments || []).filter(i => i.financingId !== id)
+      }
+      saveToStorage(updatedDb)
+
+      if (isCloudEnabled && user) {
+        deleteFirestoreFinancing(user.uid, id)
+        const oldThisFinancing = (prev.financingInstallments || []).filter(i => i.financingId === id)
+        for (const oldInst of oldThisFinancing) {
+          deleteFirestoreFinancingInstallment(user.uid, oldInst.id)
+        }
+      }
+
+      return updatedDb
+    })
+  }, [isCloudEnabled, user])
+
+  const recordFinancingInstallmentPayment = useCallback(async (
+    installmentId: string, 
+    actualValue: number, 
+    notes?: string
+  ) => {
+    const nowStr = new Date().toISOString()
+
+    setDb(prev => {
+      const inst = (prev.financingInstallments || []).find(i => i.id === installmentId)
+      if (!inst) return prev
+
+      const financing = (prev.financings || []).find(f => f.id === inst.financingId)
+      if (!financing) return prev
+
+      // 1. Atualizar a parcela como paga
+      const updatedInst: FinancingInstallment = {
+        ...inst,
+        paid: true,
+        actualValue,
+        notes
+      }
+
+      const updatedInstallments = (prev.financingInstallments || []).map(i => 
+        i.id === installmentId ? updatedInst : i
+      )
+
+      // 2. Incrementar parcelas pagas no financiamento
+      const newPaidInstallments = Math.min(financing.totalInstallments, financing.paidInstallments + 1)
+      
+      const totalAnnualRate = financing.annualInterestRate + (economicRates[financing.indexer] || 0)
+      const monthlyRate = totalAnnualRate / 100 / 12
+      const interestEstimated = financing.currentBalance * monthlyRate
+      const principalAmortization = Math.max(0, actualValue - interestEstimated)
+      const newBalance = Math.max(0, financing.currentBalance - principalAmortization)
+
+      const updatedFinancingBase: Financing = {
+        ...financing,
+        paidInstallments: newPaidInstallments,
+        currentBalance: newBalance,
+        lastInstallmentValue: actualValue,
+        updatedAt: nowStr
+      }
+
+      // Calcular nova previsão e tendência
+      const financingInsts = updatedInstallments.filter(i => i.financingId === financing.id)
+      const { predictedValue } = calculateNextInstallmentPrediction(updatedFinancingBase, financingInsts, economicRates)
+
+      const finalFinancing: Financing = {
+        ...updatedFinancingBase,
+        nextInstallmentPrediction: predictedValue
+      }
+
+      const category = 
+        financing.type === 'house' ? 'moradia' :
+        financing.type === 'vehicle' ? 'transporte' : 'moradia'
+      
+      const newTransaction: Transaction = {
+        id: uuidv4(),
+        description: `Parcela ${inst.installmentNumber}/${financing.totalInstallments} - ${financing.title}`,
+        amount: actualValue,
+        type: 'expense',
+        category,
+        date: inst.dueDate,
+        isRecurring: false,
+        createdAt: nowStr
+      }
+
+      const updatedDb = {
+        ...prev,
+        transactions: [...prev.transactions, newTransaction],
+        financings: (prev.financings || []).map(f => f.id === financing.id ? finalFinancing : f),
+        financingInstallments: updatedInstallments
+      }
+      saveToStorage(updatedDb)
+
+      if (isCloudEnabled && user) {
+        saveFinancingInstallment(user.uid, updatedInst)
+        saveFinancing(user.uid, finalFinancing)
+        saveTransaction(user.uid, newTransaction)
+      }
+
+      return updatedDb
+    })
+  }, [isCloudEnabled, user, economicRates])
 
   return (
     <FinanceContext.Provider
@@ -922,6 +1269,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         addAnnualExpense,
         updateAnnualExpense,
         deleteAnnualExpense,
+        economicRates,
+        addFinancing,
+        updateFinancing,
+        deleteFinancing,
+        recordFinancingInstallmentPayment,
         exportDatabase,
         importDatabase,
         syncToCloud,

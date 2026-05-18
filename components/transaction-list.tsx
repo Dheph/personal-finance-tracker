@@ -51,10 +51,20 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  Pencil,
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 
 export function TransactionList() {
-  const { db, deleteTransaction } = useFinance()
+  const { db, deleteTransaction, updateTransaction } = useFinance()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<string>('')
@@ -63,6 +73,56 @@ export function TransactionList() {
   const [endDateFilter, setEndDateFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
+
+  // Edit State
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null)
+  const [editDescription, setEditDescription] = useState('')
+  const [editAmount, setEditAmount] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editPaymentMethod, setEditPaymentMethod] = useState<any>('pix')
+  const [editCardId, setEditCardId] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editUpdateSubsequent, setEditUpdateSubsequent] = useState(true)
+  const [editNotes, setEditNotes] = useState('')
+  const [editTags, setEditTags] = useState('')
+
+  const handleStartEdit = (tx: any) => {
+    setEditingTransaction(tx)
+    setEditDescription(tx.description)
+    setEditAmount(String(tx.amount))
+    setEditCategory(tx.category)
+    setEditPaymentMethod(tx.paymentMethod)
+    setEditCardId(tx.cardId || '')
+    setEditDate(tx.date)
+    setEditNotes(tx.notes || '')
+    setEditTags(tx.tags ? tx.tags.join(', ') : '')
+    setEditUpdateSubsequent(true)
+  }
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingTransaction) return
+
+    const parsedTags = editTags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+
+    const updates: any = {
+      description: editDescription,
+      amount: parseFloat(editAmount),
+      category: editCategory,
+      paymentMethod: editPaymentMethod,
+      cardId: editPaymentMethod === 'credit_card' ? editCardId : undefined,
+      date: editDate,
+      competencyMonth: editDate.slice(0, 7),
+      notes: editNotes || undefined,
+      tags: parsedTags,
+    }
+
+    await updateTransaction(editingTransaction.id, updates, editUpdateSubsequent)
+    setEditingTransaction(null)
+  }
   
   const ITEMS_PER_PAGE = 10
   const allCategories = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES]
@@ -124,7 +184,8 @@ export function TransactionList() {
   }
   
   return (
-    <Card>
+    <>
+      <Card>
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <CardTitle className="text-base">
@@ -337,7 +398,18 @@ export function TransactionList() {
                         {transaction.type === 'income' ? '+' : '-'}
                         {formatCurrency(transaction.amount)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="flex items-center justify-end gap-1">
+                        {/* Edit Button */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          onClick={() => handleStartEdit(transaction)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+
+                        {/* Delete Button */}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -427,5 +499,152 @@ export function TransactionList() {
         )}
       </CardContent>
     </Card>
+      {/* Modal de Edição */}
+      {editingTransaction && (
+        <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar Transação</DialogTitle>
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Descrição *</Label>
+                <Input
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Ex: Mercado, Uber..."
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-amount">Valor *</Label>
+                  <Input
+                    id="edit-amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    placeholder="0,00"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-date">Data *</Label>
+                  <Input
+                    id="edit-date"
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-category">Categoria *</Label>
+                <Select value={editCategory} onValueChange={setEditCategory} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(editingTransaction.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-paymentMethod">Método *</Label>
+                  <Select value={editPaymentMethod} onValueChange={setEditPaymentMethod} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o método" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHODS.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {editPaymentMethod === 'credit_card' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cardId">Cartão *</Label>
+                    <Select value={editCardId} onValueChange={setEditCardId} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o cartão" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {db.cards.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-tags">Tags (separadas por vírgula)</Label>
+                <Input
+                  id="edit-tags"
+                  value={editTags}
+                  onChange={(e) => setEditTags(e.target.value)}
+                  placeholder="alimentacao, essencial, lazer..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-notes">Observações</Label>
+                <Input
+                  id="edit-notes"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Alguma anotação sobre esta transação..."
+                />
+              </div>
+
+              {editingTransaction.isRecurring && (
+                <div className="flex items-center justify-between p-3 rounded-lg border border-violet-500/20 bg-violet-500/5">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-semibold text-violet-300">Atualizar futuras recorrências?</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Atualizar automaticamente todas as despesas subsequentes desta série recorrente.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editUpdateSubsequent}
+                    onCheckedChange={setEditUpdateSubsequent}
+                  />
+                </div>
+              )}
+
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={() => setEditingTransaction(null)}>
+                  Cancelar
+                </Button>
+                <Button type="submit">
+                  Salvar Alterações
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }

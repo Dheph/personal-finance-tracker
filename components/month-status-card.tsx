@@ -15,8 +15,24 @@ export function MonthStatusCard() {
     
     // Calculate total active debt obligations (monthly payment of active loans)
     const activeLoans = db.loans.filter((l) => l.status === 'active')
-    const totalLoansDueThisMonth = activeLoans.reduce((acc, l) => acc + l.monthlyPayment, 0)
+    const loanObligations = activeLoans.reduce((acc, l) => acc + l.monthlyPayment, 0)
     
+    // Calculate outstanding current-month projected obligations for variable financings
+    const activeFinancings = (db.financings || []).filter((f) => f.currentBalance > 0)
+    const currentMonthStr = new Date().toISOString().substring(0, 7) // "YYYY-MM"
+    const financingObligations = activeFinancings.reduce((sum, f) => {
+      const insts = (db.financingInstallments || []).filter(i => i.financingId === f.id)
+      const currentMonthInst = insts.find(i => i.dueDate.startsWith(currentMonthStr))
+      if (currentMonthInst && !currentMonthInst.paid) {
+        return sum + currentMonthInst.predictedValue
+      }
+      if (!currentMonthInst && insts.some(i => !i.paid)) {
+        return sum + (f.nextInstallmentPrediction || 0)
+      }
+      return sum
+    }, 0)
+
+    const totalLoansDueThisMonth = loanObligations + financingObligations
     const totalOutflows = monthlyExpenses + totalLoansDueThisMonth
     const netBalance = monthlyIncome - totalOutflows
 
