@@ -280,7 +280,7 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
             <div className="space-y-0.5">
               <Label htmlFor="recurring">Recorrente</Label>
               <p className="text-xs text-muted-foreground">
-                Despesa fixa mensal
+                {type === 'expense' ? 'Despesa fixa mensal' : 'Receita fixa mensal'}
               </p>
             </div>
             <Switch

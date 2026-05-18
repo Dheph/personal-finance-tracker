@@ -261,17 +261,63 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   // Transactions
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: uuidv4(),
-      createdAt: new Date().toISOString(),
+    const transactionsToCreate: Transaction[] = []
+
+    if (transaction.isRecurring) {
+      const startYear = parseInt(transaction.date.substring(0, 4))
+      const startMonth = parseInt(transaction.date.substring(5, 7)) - 1
+      const startDay = parseInt(transaction.date.substring(8, 10))
+
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth()
+
+      let loopYear = startYear
+      let loopMonth = startMonth
+
+      while (loopYear < currentYear || (loopYear === currentYear && loopMonth <= currentMonth)) {
+        const daysInMonth = new Date(loopYear, loopMonth + 1, 0).getDate()
+        const targetDay = Math.min(startDay, daysInMonth)
+        const formattedMonthStr = String(loopMonth + 1).padStart(2, '0')
+        const formattedDayStr = String(targetDay).padStart(2, '0')
+        const dateStr = `${loopYear}-${formattedMonthStr}-${formattedDayStr}`
+        const competencyMonth = `${loopYear}-${formattedMonthStr}`
+
+        transactionsToCreate.push({
+          ...transaction,
+          id: uuidv4(),
+          date: dateStr,
+          competencyMonth,
+          createdAt: new Date().toISOString(),
+        })
+
+        loopMonth++
+        if (loopMonth > 11) {
+          loopMonth = 0
+          loopYear++
+        }
+      }
+
+      if (transactionsToCreate.length === 0) {
+        transactionsToCreate.push({
+          ...transaction,
+          id: uuidv4(),
+          createdAt: new Date().toISOString(),
+        })
+      }
+    } else {
+      transactionsToCreate.push({
+        ...transaction,
+        id: uuidv4(),
+        createdAt: new Date().toISOString(),
+      })
     }
 
     // Update local state immediately
     setDb(prev => {
       const updated = {
         ...prev,
-        transactions: [newTransaction, ...prev.transactions],
+        transactions: [...transactionsToCreate, ...prev.transactions],
       }
       saveToStorage(updated)
       return updated
@@ -279,7 +325,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // Sync to cloud if enabled
     if (isCloudEnabled && user) {
-      await saveTransaction(user.uid, newTransaction)
+      for (const t of transactionsToCreate) {
+        await saveTransaction(user.uid, t)
+      }
     }
   }, [isCloudEnabled, user])
 
