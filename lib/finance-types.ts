@@ -99,6 +99,7 @@ export const CARD_BRANDS = [
   { id: 'elo', label: 'Elo', color: '#00A4E0' },
   { id: 'amex', label: 'American Express', color: '#006FCF' },
   { id: 'hipercard', label: 'Hipercard', color: '#B3131B' },
+  { id: 'porto', label: 'Porto', color: '#29567bff' },
 ] as const
 
 // Loan Types

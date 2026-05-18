@@ -71,7 +71,7 @@ interface FinanceContextType {
     baseTransaction: Omit<Transaction, 'id' | 'createdAt' | 'installments'>,
     totalInstallments: number
   ) => Promise<void>
-  updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>
+  updateTransaction: (id: string, updates: Partial<Transaction>, updateSubsequent?: boolean) => Promise<void>
   deleteTransaction: (id: string) => Promise<void>
   // Cards
   addCard: (card: Omit<Card, 'id'>) => Promise<void>
@@ -378,20 +378,86 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isCloudEnabled, user])
 
-  const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>) => {
+  const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>, updateSubsequent: boolean = false) => {
+    let affectedIds: string[] = [id]
+    let subsequentUpdatesMap: { [key: string]: Partial<Transaction> } = {}
+
     setDb(prev => {
+      const originalTx = prev.transactions.find(t => t.id === id)
+      if (!originalTx) return prev
+
+      let updatedTransactions = prev.transactions.map(t => {
+        if (t.id === id) {
+          return { ...t, ...updates }
+        }
+        return t
+      })
+
+      if (updateSubsequent && originalTx.isRecurring) {
+        const originalDesc = originalTx.description.toLowerCase().trim()
+        const originalType = originalTx.type
+        const originalDateStr = originalTx.date
+
+        let dayChanged = false
+        let targetDay = 0
+        if (updates.date && updates.date !== originalDateStr) {
+          const origDate = new Date(originalDateStr)
+          const newDate = new Date(updates.date)
+          dayChanged = origDate.getDate() !== newDate.getDate()
+          targetDay = newDate.getDate()
+        }
+
+        updatedTransactions = updatedTransactions.map(t => {
+          if (t.id === id) return t // already updated
+
+          const isSubsequent = t.isRecurring &&
+                              t.type === originalType &&
+                              t.description.toLowerCase().trim() === originalDesc &&
+                              t.date >= originalDateStr
+
+          if (isSubsequent) {
+            affectedIds.push(t.id)
+            let newDateStr = t.date
+            if (dayChanged && updates.date) {
+              const parts = t.date.split('-')
+              const year = parseInt(parts[0])
+              const month = parseInt(parts[1]) - 1
+              const daysInMonth = new Date(year, month + 1, 0).getDate()
+              const finalDay = Math.min(targetDay, daysInMonth)
+              const formattedMonth = String(month + 1).padStart(2, '0')
+              const formattedDay = String(finalDay).padStart(2, '0')
+              newDateStr = `${year}-${formattedMonth}-${formattedDay}`
+            }
+
+            const subsequentUpdates = { ...updates }
+            if (updates.date) {
+              subsequentUpdates.date = newDateStr
+              subsequentUpdates.competencyMonth = newDateStr.slice(0, 7)
+            }
+
+            subsequentUpdatesMap[t.id] = subsequentUpdates
+            return { ...t, ...subsequentUpdates }
+          }
+
+          return t
+        })
+      }
+
       const updated = {
         ...prev,
-        transactions: prev.transactions.map(t => 
-          t.id === id ? { ...t, ...updates } : t
-        ),
+        transactions: updatedTransactions,
       }
       saveToStorage(updated)
       return updated
     })
 
     if (isCloudEnabled && user) {
-      await updateFirestoreTransaction(user.uid, id, updates)
+      for (const affectedId of affectedIds) {
+        const txUpdates = affectedId === id ? updates : subsequentUpdatesMap[affectedId]
+        if (txUpdates) {
+          await updateFirestoreTransaction(user.uid, affectedId, txUpdates)
+        }
+      }
     }
   }, [isCloudEnabled, user])
 

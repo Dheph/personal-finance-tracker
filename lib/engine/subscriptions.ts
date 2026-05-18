@@ -10,7 +10,7 @@ export function detectSubscriptions(transactions: Transaction[]): {
   subscriptions: Subscription[];
   insights: BehaviorInsight[];
 } {
-  const expenses = transactions.filter(t => t.type === 'expense');
+  const expenses = transactions.filter(t => t.type === 'expense' && !t.installments);
   const groups: { [key: string]: Transaction[] } = {};
 
   // Group by normalized name (lowercase, stripped numbers/months)
