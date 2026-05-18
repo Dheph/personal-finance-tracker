@@ -27,7 +27,9 @@ import {
   Asset,
   Liability,
   SinkingFund,
-  AnnualExpense
+  AnnualExpense,
+  Financing,
+  FinancingInstallment
 } from './finance-types'
 
 // Helper para remover valores undefined (Firestore não aceita undefined)
@@ -229,6 +231,114 @@ export async function deleteFirestoreLoan(userId: string, id: string): Promise<v
   await deleteDoc(doc(col, id))
 }
 
+// Variable Financing
+export async function fetchFinancings(userId: string): Promise<Financing[]> {
+  if (!isFirebaseConfigured()) return []
+  
+  const col = getUserCollection(userId, 'financings')
+  const snapshot = await getDocs(col)
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Financing))
+}
+
+export function subscribeToFinancings(
+  userId: string,
+  callback: (financings: Financing[]) => void
+): Unsubscribe {
+  if (!isFirebaseConfigured()) {
+    callback([])
+    return () => {}
+  }
+  
+  const col = getUserCollection(userId, 'financings')
+  return onSnapshot(col, (snapshot) => {
+    const financings = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    } as Financing))
+    callback(financings)
+  })
+}
+
+export async function saveFinancing(userId: string, financing: Financing): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financings')
+  const { id, ...data } = financing
+  await setDoc(doc(col, id), removeUndefined(data))
+}
+
+export async function updateFirestoreFinancing(
+  userId: string, 
+  id: string, 
+  updates: Partial<Financing>
+): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financings')
+  await updateDoc(doc(col, id), removeUndefined({ ...updates, updatedAt: new Date().toISOString() }))
+}
+
+export async function deleteFirestoreFinancing(userId: string, id: string): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financings')
+  await deleteDoc(doc(col, id))
+}
+
+// Financing Installments
+export async function fetchFinancingInstallments(userId: string): Promise<FinancingInstallment[]> {
+  if (!isFirebaseConfigured()) return []
+  
+  const col = getUserCollection(userId, 'financing_installments')
+  const snapshot = await getDocs(col)
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancingInstallment))
+}
+
+export function subscribeToFinancingInstallments(
+  userId: string,
+  callback: (installments: FinancingInstallment[]) => void
+): Unsubscribe {
+  if (!isFirebaseConfigured()) {
+    callback([])
+    return () => {}
+  }
+  
+  const col = getUserCollection(userId, 'financing_installments')
+  return onSnapshot(col, (snapshot) => {
+    const installments = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    } as FinancingInstallment))
+    callback(installments)
+  })
+}
+
+export async function saveFinancingInstallment(userId: string, installment: FinancingInstallment): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financing_installments')
+  const { id, ...data } = installment
+  await setDoc(doc(col, id), removeUndefined(data))
+}
+
+export async function updateFirestoreFinancingInstallment(
+  userId: string, 
+  id: string, 
+  updates: Partial<FinancingInstallment>
+): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financing_installments')
+  await updateDoc(doc(col, id), removeUndefined(updates))
+}
+
+export async function deleteFirestoreFinancingInstallment(userId: string, id: string): Promise<void> {
+  if (!isFirebaseConfigured()) return
+  
+  const col = getUserCollection(userId, 'financing_installments')
+  await deleteDoc(doc(col, id))
+}
+
 // Loan Payments
 export async function fetchLoanPayments(userId: string, loanId?: string): Promise<LoanPayment[]> {
   if (!isFirebaseConfigured()) return []
@@ -357,7 +467,9 @@ export async function syncLocalToFirestore(
   assets: Asset[],
   liabilities: Liability[],
   sinkingFunds: SinkingFund[],
-  annualExpenses: AnnualExpense[]
+  annualExpenses: AnnualExpense[],
+  financings: Financing[],
+  financingInstallments: FinancingInstallment[]
 ): Promise<void> {
   if (!isFirebaseConfigured()) return
   
@@ -414,6 +526,20 @@ export async function syncLocalToFirestore(
   for (const expense of annualExpenses) {
     const { id, ...data } = expense
     const ref = doc(db, 'users', userId, 'annualExpenses', id)
+    batch.set(ref, removeUndefined(data))
+  }
+
+  // Sync financings
+  for (const financing of financings) {
+    const { id, ...data } = financing
+    const ref = doc(db, 'users', userId, 'financings', id)
+    batch.set(ref, removeUndefined(data))
+  }
+
+  // Sync financing installments
+  for (const installment of financingInstallments) {
+    const { id, ...data } = installment
+    const ref = doc(db, 'users', userId, 'financing_installments', id)
     batch.set(ref, removeUndefined(data))
   }
 

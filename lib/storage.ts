@@ -22,6 +22,8 @@ export function loadDatabase(): FinanceDatabase {
         sinkingFunds: parsed.sinkingFunds || [],
         annualExpenses: parsed.annualExpenses || [],
         customBudgets: parsed.customBudgets || [],
+        financings: parsed.financings || [],
+        financingInstallments: parsed.financingInstallments || [],
       }
     }
   } catch (error) {

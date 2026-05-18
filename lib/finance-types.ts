@@ -197,7 +197,6 @@ export interface FinancialInsight {
 
 export const LOAN_TYPES = [
   { id: 'personal_loan', label: 'Empréstimo Pessoal' },
-  { id: 'financing', label: 'Financiamento' },
   { id: 'consignado', label: 'Consignado' },
   { id: 'overdraft', label: 'Cheque Especial' },
   { id: 'credit_card_installment', label: 'Cartão Parcelado' },
@@ -273,6 +272,41 @@ export interface Budget {
   warningThreshold: number
 }
 
+// Variable Financing Types
+export interface Financing {
+  id: string
+  title: string
+  bankName?: string
+  type: 'vehicle' | 'house' | 'personal' | 'other'
+  calculationModel: 'FIXED' | 'VARIABLE' | 'PRICE' | 'SAC'
+  principalAmount: number
+  currentBalance: number
+  annualInterestRate: number
+  totalInstallments: number
+  paidInstallments: number
+  indexer: 'FIXED' | 'SELIC' | 'CDI' | 'IPCA' | 'TR'
+  startDate: string
+  nextInstallmentPrediction?: number
+  lastInstallmentValue?: number
+  createdAt: string
+  updatedAt: string
+  createdBy?: string
+}
+
+export interface FinancingInstallment {
+  id: string
+  financingId: string
+  installmentNumber: number
+  dueDate: string
+  predictedValue: number
+  actualValue?: number
+  paid: boolean
+  notes?: string
+  indexerValueUsed?: number
+  interestRateUsed?: number
+  createdAt: string
+}
+
 export interface FinanceDatabase {
   transactions: Transaction[]
   cards: Card[]
@@ -287,6 +321,9 @@ export interface FinanceDatabase {
   sinkingFunds: SinkingFund[]
   annualExpenses: AnnualExpense[]
   customBudgets: Budget[]
+  // Financing fields
+  financings: Financing[]
+  financingInstallments: FinancingInstallment[]
 }
 
 export const DEFAULT_DATABASE: FinanceDatabase = {
@@ -324,4 +361,6 @@ export const DEFAULT_DATABASE: FinanceDatabase = {
   sinkingFunds: [],
   annualExpenses: [],
   customBudgets: [],
+  financings: [],
+  financingInstallments: [],
 }
