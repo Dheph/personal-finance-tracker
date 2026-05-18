@@ -157,8 +157,13 @@ export function MonthStatusCard() {
               <span>Despesas Totais</span>
             </div>
             <p className="text-sm font-bold text-foreground">
-              {formatCurrency(analysis.monthlyExpenses)}
+              {formatCurrency(analysis.totalOutflows)}
             </p>
+            {analysis.totalLoansDueThisMonth > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-0.5 leading-none">
+                Inclui {formatCurrency(analysis.totalLoansDueThisMonth)} de parcelas
+              </p>
+            )}
           </div>
 
           <div className="col-span-2 space-y-1 p-3 rounded-xl bg-muted/20 border border-muted/30 flex justify-between items-center">
