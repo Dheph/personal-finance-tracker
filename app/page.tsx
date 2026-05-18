@@ -7,6 +7,8 @@ import { MonthlyTrendChart, CategoryPieChart } from '@/components/dashboard-char
 import { RecentTransactions } from '@/components/recent-transactions'
 import { LoanSummary } from '@/components/loan-list'
 import { AnalyticsMetrics } from '@/components/financial-insights'
+import { NetWorthCard } from '@/components/net-worth-card'
+import { SubscriptionCard } from '@/components/subscription-card'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -27,6 +29,11 @@ function DashboardContent() {
           </div>
           
           <div className="space-y-8">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4">Patrimônio Inteligente</h2>
+              <NetWorthCard />
+            </div>
+
             <DashboardCards />
             
             <div>
@@ -37,6 +44,11 @@ function DashboardContent() {
             <div>
               <h2 className="text-lg font-semibold text-foreground mb-4">Insights Financeiros</h2>
               <AnalyticsMetrics />
+            </div>
+
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4">Gestão de Assinaturas</h2>
+              <SubscriptionCard />
             </div>
             
             <div className="grid gap-6 lg:grid-cols-3">

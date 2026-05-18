@@ -8,7 +8,9 @@ import {
   Loan,
   LoanPayment,
   PayoffPlan,
-  DEFAULT_DATABASE 
+  DEFAULT_DATABASE,
+  Asset,
+  Liability
 } from '@/lib/finance-types'
 import {
   loadDatabase,
@@ -37,16 +39,24 @@ import {
   deleteFirestorePayoffPlan,
   enableOfflinePersistence,
   syncLocalToFirestore,
+  subscribeToAssets,
+  saveAsset,
+  deleteFirestoreAsset,
+  subscribeToLiabilities,
+  saveLiability,
+  deleteFirestoreLiability,
 } from '@/lib/firestore'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { useAuth } from './auth-context'
 import { v4 as uuidv4 } from 'uuid'
+import { runFinancialIntelligenceEngine, FinancialIntelligenceResult } from '@/lib/engine/core'
 
 interface FinanceContextType {
   db: FinanceDatabase
   isLoading: boolean
   isSyncing: boolean
   isCloudEnabled: boolean
+  engineResult: FinancialIntelligenceResult | null
   // Transactions
   addTransaction: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>
   addInstallmentTransactions: (
@@ -68,6 +78,14 @@ interface FinanceContextType {
   addPayoffPlan: (plan: Omit<PayoffPlan, 'id' | 'createdAt'>) => Promise<void>
   updatePayoffPlan: (id: string, updates: Partial<PayoffPlan>) => Promise<void>
   deletePayoffPlan: (id: string) => Promise<void>
+  // Assets
+  addAsset: (asset: Omit<Asset, 'id' | 'updatedAt'>) => Promise<void>
+  updateAsset: (id: string, updates: Partial<Asset>) => Promise<void>
+  deleteAsset: (id: string) => Promise<void>
+  // Liabilities
+  addLiability: (liability: Omit<Liability, 'id' | 'updatedAt'>) => Promise<void>
+  updateLiability: (id: string, updates: Partial<Liability>) => Promise<void>
+  deleteLiability: (id: string) => Promise<void>
   // Utilities
   exportDatabase: () => void
   importDatabase: (file: File) => Promise<void>
@@ -82,7 +100,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<FinanceDatabase>(DEFAULT_DATABASE)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [engineResult, setEngineResult] = useState<FinancialIntelligenceResult | null>(null)
   const isCloudEnabled = isFirebaseConfigured() && !!user
+
+  // Reactive Engine Calculation
+  useEffect(() => {
+    try {
+      const result = runFinancialIntelligenceEngine(db, {
+        assets: db.assets || [],
+        liabilities: db.liabilities || [],
+        sinkingFunds: db.sinkingFunds || [],
+        annualExpenses: db.annualExpenses || [],
+        customBudgets: db.customBudgets || [],
+      })
+      setEngineResult(result)
+    } catch (e) {
+      console.error('Erro ao executar Financial Intelligence Engine:', e)
+    }
+  }, [db])
 
   // Initial load from localStorage
   useEffect(() => {
@@ -153,6 +188,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       subscribeToPayoffPlans(user.uid, (payoffPlans) => {
         setDb(prev => {
           const updated = { ...prev, payoffPlans }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to assets
+    unsubscribers.push(
+      subscribeToAssets(user.uid, (assets) => {
+        setDb(prev => {
+          const updated = { ...prev, assets }
+          saveToStorage(updated)
+          return updated
+        })
+      })
+    )
+
+    // Subscribe to liabilities
+    unsubscribers.push(
+      subscribeToLiabilities(user.uid, (liabilities) => {
+        setDb(prev => {
+          const updated = { ...prev, liabilities }
           saveToStorage(updated)
           return updated
         })
@@ -460,6 +517,136 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }, [isCloudEnabled, user])
 
+  // Assets
+  const addAsset = useCallback(async (asset: Omit<Asset, 'id' | 'updatedAt'>) => {
+    const newAsset: Asset = {
+      ...asset,
+      id: uuidv4(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: [...(prev.assets || []), newAsset],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveAsset(user.uid, newAsset)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateAsset = useCallback(async (id: string, updates: Partial<Asset>) => {
+    const updatedAsset = {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: (prev.assets || []).map(a => 
+          a.id === id ? { ...a, ...updatedAsset } : a
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.assets.find(a => a.id === id)
+        if (found) {
+          saveAsset(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteAsset = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        assets: (prev.assets || []).filter(a => a.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreAsset(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
+  // Liabilities
+  const addLiability = useCallback(async (liability: Omit<Liability, 'id' | 'updatedAt'>) => {
+    const newLiability: Liability = {
+      ...liability,
+      id: uuidv4(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: [...(prev.liabilities || []), newLiability],
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await saveLiability(user.uid, newLiability)
+    }
+  }, [isCloudEnabled, user])
+
+  const updateLiability = useCallback(async (id: string, updates: Partial<Liability>) => {
+    const updatedLiability = {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: (prev.liabilities || []).map(l => 
+          l.id === id ? { ...l, ...updatedLiability } : l
+        ),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      setDb(prev => {
+        const found = prev.liabilities.find(l => l.id === id)
+        if (found) {
+          saveLiability(user.uid, found)
+        }
+        return prev
+      })
+    }
+  }, [isCloudEnabled, user])
+
+  const deleteLiability = useCallback(async (id: string) => {
+    setDb(prev => {
+      const updated = {
+        ...prev,
+        liabilities: (prev.liabilities || []).filter(l => l.id !== id),
+      }
+      saveToStorage(updated)
+      return updated
+    })
+
+    if (isCloudEnabled && user) {
+      await deleteFirestoreLiability(user.uid, id)
+    }
+  }, [isCloudEnabled, user])
+
   // Utilities
   const exportDatabase = () => {
     exportToFile(db)
@@ -480,7 +667,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         db.transactions,
         db.cards,
         db.loans,
-        db.settings
+        db.settings,
+        db.assets || [],
+        db.liabilities || []
       )
     } finally {
       setIsSyncing(false)
@@ -499,6 +688,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         isLoading,
         isSyncing,
         isCloudEnabled,
+        engineResult,
         addTransaction,
         addInstallmentTransactions,
         updateTransaction,
@@ -513,6 +703,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         addPayoffPlan,
         updatePayoffPlan,
         deletePayoffPlan,
+        addAsset,
+        updateAsset,
+        deleteAsset,
+        addLiability,
+        updateLiability,
+        deleteLiability,
         exportDatabase,
         importDatabase,
         syncToCloud,
