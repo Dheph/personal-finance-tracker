@@ -8,6 +8,7 @@ import { RecentTransactions } from '@/components/recent-transactions'
 import { LoanSummary } from '@/components/loan-list'
 import { AnalyticsMetrics } from '@/components/financial-insights'
 import { NetWorthCard } from '@/components/net-worth-card'
+import { MonthStatusCard } from '@/components/month-status-card'
 import { SubscriptionCard } from '@/components/subscription-card'
 import { DynamicExpensesCard } from '@/components/dynamic-expenses-card'
 import { BehaviorAnalysisCard } from '@/components/behavior-analysis-card'
@@ -35,9 +36,15 @@ function DashboardContent() {
           </div>
           
           <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">Patrimônio Inteligente</h2>
-              <NetWorthCard />
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Patrimônio Inteligente</h2>
+                <NetWorthCard />
+              </div>
+              <div className="lg:col-span-1">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Status do Mês</h2>
+                <MonthStatusCard />
+              </div>
             </div>
 
             <DashboardCards />
