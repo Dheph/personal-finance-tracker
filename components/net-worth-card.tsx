@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Wallet, Landmark, Car, Home, TrendingUp, DollarSign, Plus, Trash2, ArrowUpRight, ArrowDownRight, Briefcase } from 'lucide-react'
+import { Wallet, Landmark, Car, Home, TrendingUp, DollarSign, Plus, Trash2, ArrowUpRight, ArrowDownRight, Briefcase, Pencil } from 'lucide-react'
 
 const ASSET_ICONS = {
   cash: Wallet,
@@ -34,9 +34,11 @@ const LIABILITY_LABELS = {
 }
 
 export function NetWorthCard() {
-  const { engineResult, addAsset, deleteAsset, addLiability, deleteLiability } = useFinance()
+  const { db, engineResult, addAsset, updateAsset, deleteAsset, addLiability, updateLiability, deleteLiability } = useFinance()
   const [isAssetOpen, setIsAssetOpen] = useState(false)
   const [isLiabilityOpen, setIsLiabilityOpen] = useState(false)
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [editingLiability, setEditingLiability] = useState<Liability | null>(null)
 
   // Form states for Asset
   const [assetName, setAssetName] = useState('')
@@ -47,6 +49,16 @@ export function NetWorthCard() {
   const [liabilityName, setLiabilityName] = useState('')
   const [liabilityType, setLiabilityType] = useState<LiabilityType>('loan')
   const [liabilityValue, setLiabilityValue] = useState('')
+
+  // Form states for Editing Asset
+  const [editAssetName, setEditAssetName] = useState('')
+  const [editAssetType, setEditAssetType] = useState<AssetType>('cash')
+  const [editAssetValue, setEditAssetValue] = useState('')
+
+  // Form states for Editing Liability
+  const [editLiabilityName, setEditLiabilityName] = useState('')
+  const [editLiabilityType, setEditLiabilityType] = useState<LiabilityType>('loan')
+  const [editLiabilityValue, setEditLiabilityValue] = useState('')
 
   if (!engineResult) return null
 
@@ -88,6 +100,42 @@ export function NetWorthCard() {
     setLiabilityName('')
     setLiabilityValue('')
     setIsLiabilityOpen(false)
+  }
+
+  const handleOpenEditAsset = (asset: Asset) => {
+    setEditingAsset(asset)
+    setEditAssetName(asset.name)
+    setEditAssetType(asset.type)
+    setEditAssetValue(asset.currentValue.toString())
+  }
+
+  const handleOpenEditLiability = (liability: Liability) => {
+    setEditingLiability(liability)
+    setEditLiabilityName(liability.name)
+    setEditLiabilityType(liability.type)
+    setEditLiabilityValue(liability.remainingAmount.toString())
+  }
+
+  const handleEditAssetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingAsset || !editAssetName || !editAssetValue) return
+    await updateAsset(editingAsset.id, {
+      name: editAssetName,
+      type: editAssetType,
+      currentValue: parseFloat(editAssetValue),
+    })
+    setEditingAsset(null)
+  }
+
+  const handleEditLiabilitySubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingLiability || !editLiabilityName || !editLiabilityValue) return
+    await updateLiability(editingLiability.id, {
+      name: editLiabilityName,
+      type: editLiabilityType,
+      remainingAmount: parseFloat(editLiabilityValue),
+    })
+    setEditingLiability(null)
   }
 
   return (
@@ -185,29 +233,34 @@ export function NetWorthCard() {
               Nenhum ativo manual cadastrado.
             </div>
           ) : (
-            breakdown.assets.map((a, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 hover:bg-muted/60 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <Briefcase className="w-4 h-4 text-indigo-400" />
-                  <div>
-                    <span className="text-sm font-medium text-foreground block leading-tight">{a.name}</span>
+            breakdown.assets.map((a, idx) => {
+              const originalAsset = db.assets.find(item => item.id === a.id)
+              return (
+                <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 hover:bg-muted/60 transition-colors">
+                  <div className="flex items-center gap-2.5">
+                    <Briefcase className="w-4 h-4 text-indigo-400" />
+                    <div>
+                      <span className="text-sm font-medium text-foreground block leading-tight">{a.name}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-emerald-400">
+                      R$ {a.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                    {originalAsset && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10" onClick={() => handleOpenEditAsset(originalAsset)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {a.id && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10" onClick={() => deleteAsset(a.id!)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-emerald-400">
-                    R$ {a.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10" onClick={() => {
-                    // Quick check if there is an ID associated
-                    const originalAsset = engineResult.netWorth.breakdown.assets[idx]
-                    const assetId = useFinance().db.assets.find(item => item.name === originalAsset.name && item.currentValue === originalAsset.value)?.id
-                    if (assetId) deleteAsset(assetId)
-                  }}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </CardContent>
       </Card>
@@ -270,6 +323,7 @@ export function NetWorthCard() {
           ) : (
             breakdown.liabilities.map((l, idx) => {
               const isAutoDetected = l.name.includes('(Mês Atual)') || l.name.startsWith('Empréstimo:')
+              const originalLiability = db.liabilities.find(item => item.id === l.id)
               return (
                 <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 hover:bg-muted/60 transition-colors">
                   <div className="flex items-center gap-2.5">
@@ -283,15 +337,17 @@ export function NetWorthCard() {
                     <span className="text-sm font-semibold text-rose-400">
                       R$ {l.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
-                    {!isAutoDetected ? (
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10" onClick={() => {
-                        const originalLiability = engineResult.netWorth.breakdown.liabilities[idx]
-                        const liabilityId = useFinance().db.liabilities.find(item => item.name === originalLiability.name && item.remainingAmount === originalLiability.value)?.id
-                        if (liabilityId) deleteLiability(liabilityId)
-                      }}>
+                    {!isAutoDetected && originalLiability && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10" onClick={() => handleOpenEditLiability(originalLiability)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {!isAutoDetected && l.id && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10" onClick={() => deleteLiability(l.id!)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
+                    )}
+                    {isAutoDetected && (
                       <div className="w-6" /> // spacer
                     )}
                   </div>
@@ -301,6 +357,85 @@ export function NetWorthCard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog para Editar Ativo */}
+      <Dialog open={editingAsset !== null} onOpenChange={(open) => !open && setEditingAsset(null)}>
+        <DialogContent className="border-border bg-background">
+          <DialogHeader>
+            <DialogTitle>Editar Ativo</DialogTitle>
+            <DialogDescription>Atualize os dados deste ativo para calcular seu patrimônio real de forma correta.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditAssetSubmit} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-asset-name">Nome do Ativo</Label>
+              <Input id="edit-asset-name" placeholder="Ex: Apartamento, Corolla" value={editAssetName} onChange={e => setEditAssetName(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-asset-type">Tipo</Label>
+                <Select value={editAssetType} onValueChange={(val: AssetType) => setEditAssetType(val)}>
+                  <SelectTrigger id="edit-asset-type">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(ASSET_LABELS).map(([key, value]) => (
+                      <SelectItem key={key} value={key}>{value}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-asset-value">Valor Atual (R$)</Label>
+                <Input id="edit-asset-value" type="number" step="0.01" placeholder="Ex: 50000" value={editAssetValue} onChange={e => setEditAssetValue(e.target.value)} required />
+              </div>
+            </div>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={() => setEditingAsset(null)}>Cancelar</Button>
+              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white">Salvar Alterações</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para Editar Passivo */}
+      <Dialog open={editingLiability !== null} onOpenChange={(open) => !open && setEditingLiability(null)}>
+        <DialogContent className="border-border bg-background">
+          <DialogHeader>
+            <DialogTitle>Editar Passivo</DialogTitle>
+            <DialogDescription>Atualize o valor pendente ou nome desta obrigação manual.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditLiabilitySubmit} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-liability-name">Nome da Obrigação</Label>
+              <Input id="edit-liability-name" placeholder="Ex: Boleto com Amigo" value={editLiabilityName} onChange={e => setEditLiabilityName(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-liability-type">Tipo</Label>
+                <Select value={editLiabilityType} onValueChange={(val: LiabilityType) => setEditLiabilityType(val)}>
+                  <SelectTrigger id="edit-liability-type">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(LIABILITY_LABELS).map(([key, value]) => (
+                      <SelectItem key={key} value={key}>{value}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-liability-value">Valor Pendente (R$)</Label>
+                <Input id="edit-liability-value" type="number" step="0.01" placeholder="Ex: 1500" value={editLiabilityValue} onChange={e => setEditLiabilityValue(e.target.value)} required />
+              </div>
+            </div>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={() => setEditingLiability(null)}>Cancelar</Button>
+              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white">Salvar Alterações</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
+

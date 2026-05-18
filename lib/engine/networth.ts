@@ -14,8 +14,8 @@ export function calculateNetWorth(
   liabilitiesTotal: number;
   netWorth: number;
   breakdown: {
-    assets: { name: string; value: number }[];
-    liabilities: { name: string; value: number }[];
+    assets: { id?: string; name: string; value: number }[];
+    liabilities: { id?: string; name: string; value: number }[];
   };
 } {
   const assetsTotal = assets.reduce((sum, a) => sum + a.currentValue, 0);
@@ -38,11 +38,11 @@ export function calculateNetWorth(
   const netWorth = assetsTotal - liabilitiesTotal;
 
   // Build Breakdown
-  const assetsBreakdown = assets.map(a => ({ name: a.name, value: a.currentValue }));
+  const assetsBreakdown = assets.map(a => ({ id: a.id, name: a.name, value: a.currentValue }));
   
   const liabilitiesBreakdown = [
-    ...liabilities.map(l => ({ name: l.name, value: l.remainingAmount })),
-    ...activeLoans.map(l => ({ name: `Empréstimo: ${l.name}`, value: l.remainingAmount })),
+    ...liabilities.map(l => ({ id: l.id, name: l.name, value: l.remainingAmount })),
+    ...activeLoans.map(l => ({ id: l.id, name: `Empréstimo: ${l.name}`, value: l.remainingAmount })),
   ];
   if (creditCardTotal > 0) {
     liabilitiesBreakdown.push({ name: 'Fatura Cartões (Mês Atual)', value: creditCardTotal });
